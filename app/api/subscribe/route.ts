@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Ensure Node runtime (service role cannot run at the edge)
 export const runtime = 'nodejs';
 
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -15,7 +14,10 @@ const supabase = (supabaseUrl && supabaseServiceRoleKey)
   ? createClient(supabaseUrl, supabaseServiceRoleKey, { auth: { persistSession: false } })
   : null;
 
-type Payload = { email?: string; name?: string; campus?: string; source?: string };
+type Payload = {
+  email?: string; name?: string; campus?: string; source?: string;
+  utm_source?: string; utm_medium?: string; utm_campaign?: string; referrer?: string;
+};
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -32,10 +34,15 @@ export async function POST(req: Request) {
     }
 
     const body = (await req.json()) as Payload;
-    const email = clean(body.email?.toLowerCase());
-    const name = clean(body.name, 80);
-    const campus = clean(body.campus, 120);
-    const source = clean(body.source || 'landing', 64);
+
+    const email       = clean(body.email?.toLowerCase());
+    const name        = clean(body.name, 80);
+    const campus      = clean(body.campus, 120);
+    const source      = clean(body.source || 'landing', 64);
+    const utm_source   = clean(body.utm_source, 64);
+    const utm_medium   = clean(body.utm_medium, 64);
+    const utm_campaign = clean(body.utm_campaign, 64);
+    const referrer     = clean(body.referrer, 256);
 
     if (!isValidEmail(email)) {
       return NextResponse.json({ error: 'Invalid email' }, { status: 400 });
@@ -43,7 +50,7 @@ export async function POST(req: Request) {
 
     const { data, error } = await supabase
       .from('waitlist_subscribers')
-      .upsert({ email, name, campus, source }, { onConflict: 'email' })
+      .upsert({ email, name, campus, source, utm_source, utm_medium, utm_campaign, referrer }, { onConflict: 'email' })
       .select('id')
       .single();
 
@@ -59,7 +66,7 @@ export async function POST(req: Request) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            text: `New Juxa signup\n• Email: ${email}\n• Name: ${name || '-'}\n• Campus: ${campus || '-'}\n• Source: ${source}`,
+            text: `New Juxa signup\n• Email: ${email}\n• Name: ${name || '-'}\n• Campus: ${campus || '-'}\n• Source: ${source}\n• UTM: ${utm_source || '-'} / ${utm_medium || '-'} / ${utm_campaign || '-'}\n• Referrer: ${referrer || '-'}`,
           }),
         });
       } catch (e) {
@@ -77,7 +84,7 @@ export async function POST(req: Request) {
           from: notifyEmailFrom,
           to: recipients,
           subject: 'New Juxa waitlist signup',
-          text: `Email: ${email}\nName: ${name || '-'}\nCampus: ${campus || '-'}\nSource: ${source}`,
+          text: `Email: ${email}\nName: ${name || '-'}\nCampus: ${campus || '-'}\nSource: ${source}\nUTM: ${utm_source || '-'} / ${utm_medium || '-'} / ${utm_campaign || '-'}\nReferrer: ${referrer || '-'}`,
         });
       } catch (e) {
         console.warn('[subscribe] Email notification failed:', e);
