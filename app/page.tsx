@@ -5,9 +5,8 @@ import { motion } from "framer-motion";
 import { Analytics } from "@vercel/analytics/react";
 import { ShieldCheck, Users, Clock, Sparkles, ToggleRight, Scan, MessageCircle } from "lucide-react";
 
-// Juxa Landing Page — complete hero with sticky nav, how-it-works, email capture
-// Adds: honeypot anti-spam, lightweight event tracking, Privacy & Terms sections, Vercel Analytics
-// Install deps if missing: npm i framer-motion lucide-react @vercel/analytics
+// Juxa Landing Page — sticky nav, hero, how-it-works, email capture, policies
+// Adds: honeypot anti-spam, UTM + referrer capture, tiny event beacons, Vercel Analytics
 
 function JuxaMark({ size = 28, stroke = 5, gap = 0.18, rotate = -20, className = "" }) {
   const r = (size - stroke) / 2;
@@ -41,7 +40,7 @@ function BrandWordmark({ className = "" }) {
   );
 }
 
-function Feature({ icon: Icon, title, desc }) {
+function Feature({ icon: Icon, title, desc }: { icon: any; title: string; desc: string }) {
   return (
     <div className="flex items-start gap-3">
       <div className="rounded-xl p-2 bg-white/10 ring-1 ring-white/15">
@@ -77,7 +76,7 @@ function DeviceMock() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold">Open to Hello</p>
-                <p className="text-xs text-white/70">Visible for 30 minutes • Double‑opt‑in</p>
+                <p className="text-xs text-white/70">Visible for 30 minutes • Double-opt-in</p>
               </div>
               <button className="group relative inline-flex items-center gap-2 rounded-full bg-[#1FA7A0] px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70">
                 <span>Toggle</span>
@@ -93,12 +92,12 @@ function DeviceMock() {
   );
 }
 
-function isValidEmail(email) {
-  return typeof email === "string" && email.includes("@") && email.includes(".");
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 // lightweight event logger (beacon to /api/track)
-function track(name, data = {}) {
+function track(name: string, data: Record<string, any> = {}) {
   try {
     const body = JSON.stringify({ name, data, ts: Date.now(), path: typeof window !== "undefined" ? window.location.pathname : "/" });
     if (typeof navigator !== "undefined" && "sendBeacon" in navigator) {
@@ -114,33 +113,58 @@ function EmailCapture() {
   const [name, setName] = React.useState("");
   const [campus, setCampus] = React.useState("");
   const [submitted, setSubmitted] = React.useState(false);
-  const [lastSubmitted, setLastSubmitted] = React.useState(null);
+  const [lastSubmitted, setLastSubmitted] = React.useState<{ email: string; name: string; campus: string } | null>(null);
   const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState(null);
-  // Anti‑spam: honeypot and quick-submit blocker
-  const [hp, setHp] = React.useState("");
-  const startedAt = React.useRef(Date.now());
+  const [error, setError] = React.useState<string | null>(null);
 
-  const onSubmit = async (e) => {
+  // Anti-spam: honeypot + quick-submit block
+  const [hp, setHp] = React.useState("");
+  const startedAt = React.useRef<number>(Date.now());
+
+  // UTM + referrer capture
+  const [utm, setUtm] = React.useState({ source: "", medium: "", campaign: "" });
+  const [referrer, setReferrer] = React.useState("");
+  React.useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      setUtm({
+        source: url.searchParams.get("utm_source") || "",
+        medium: url.searchParams.get("utm_medium") || "",
+        campaign: url.searchParams.get("utm_campaign") || ""
+      });
+      setReferrer(document.referrer || "");
+    } catch {}
+  }, []);
+
+  const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
+
     const elapsed = Date.now() - startedAt.current;
     if (hp.trim() !== "" || elapsed < 1500) {
       track("honeypot_block", { elapsed, hp: hp.length });
       setSubmitted(true);
       return;
     }
+
     if (!isValidEmail(email)) {
       setError("Please enter a valid email address.");
       track("submit_invalid_email");
       return;
     }
+
     setLoading(true);
     try {
       const res = await fetch("/api/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name, campus, source: "landing" }),
+        body: JSON.stringify({
+          email, name, campus, source: "landing",
+          utm_source: utm.source,
+          utm_medium: utm.medium,
+          utm_campaign: utm.campaign,
+          referrer
+        }),
       });
       if (!res.ok) {
         const txt = await res.text();
@@ -148,11 +172,11 @@ function EmailCapture() {
       }
       setLastSubmitted({ email, name, campus });
       setSubmitted(true);
-      track("waitlist_submit", { emailDomain: (email.split("@")[1] || ""), campus });
+      track("waitlist_submit", { emailDomain: (email.split("@")[1] || ""), campus, ...utm });
       setName("");
       setCampus("");
       setEmail("");
-    } catch (err) {
+    } catch (err: any) {
       setError(err?.message || "Something went wrong");
       track("submit_error");
     } finally {
@@ -197,7 +221,7 @@ function EmailCapture() {
         ) : (
           <div className="mt-5 rounded-2xl bg-[#1FA7A0]/10 p-4 text-sm text-white">
             {lastSubmitted ? (
-              <>Thanks, <span className="font-semibold">{lastSubmitted.name}</span>! We’ve added <span className="font-semibold">{lastSubmitted.email}</span> for <span className="font-semibold">{lastSubmitted.campus}</span> to the early‑access list.</>
+              <>Thanks, <span className="font-semibold">{lastSubmitted.name}</span>! We’ve added <span className="font-semibold">{lastSubmitted.email}</span> for <span className="font-semibold">{lastSubmitted.campus}</span> to the early-access list.</>
             ) : (
               <>Thanks! You’re on the list. We’ll be in touch soon.</>
             )}
@@ -210,16 +234,16 @@ function EmailCapture() {
 
 function HowItWorks() {
   const items = [
-    { icon: ToggleRight, title: "Toggle Open to Hello", desc: "Opt‑in for a 30‑minute window. You’re visible only while it’s on." },
+    { icon: ToggleRight, title: "Toggle Open to Hello", desc: "Opt-in for a 30-minute window. You’re visible only while it’s on." },
     { icon: Scan, title: "See Hello Cards", desc: "Discover people within range who opted in near you." },
-    { icon: Users, title: "Double‑opt‑in", desc: "Only mutual picks can chat—no cold DMs or unwanted pings." },
+    { icon: Users, title: "Double-opt-in", desc: "Only mutual picks can chat—no cold DMs or unwanted pings." },
     { icon: MessageCircle, title: "Chat, then pin or let it fade", desc: "Ephemeral by default for safety and focus." },
   ];
   return (
     <section id="how" className="mx-auto w-full max-w-7xl px-6 py-16">
       <div className="mx-auto max-w-2xl text-center">
         <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">How it works</h2>
-        <p className="mt-3 text-white/80">Small, safe, time‑boxed micro‑intros. No always‑on tracking. No creep.</p>
+        <p className="mt-3 text-white/80">Small, safe, time-boxed micro-intros. No always-on tracking. No creep.</p>
       </div>
       <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((it, i) => (
@@ -231,9 +255,21 @@ function HowItWorks() {
         ))}
       </div>
       <div id="safety" className="mt-12 grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6 ring-1 ring-white/10"><div className="mb-3 inline-flex rounded-xl bg-white/10 p-2 ring-1 ring-white/15"><ShieldCheck className="h-5 w-5" /></div><h3 className="text-base font-semibold">Safety & privacy</h3><p className="mt-2 text-sm text-white/70">Double‑opt‑in chat, block/report controls, fine‑grained visibility windows, and privacy by design. No public trails.</p></div>
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6 ring-1 ring-white/10"><div className="mb-3 inline-flex rounded-xl bg-white/10 p-2 ring-1 ring-white/15"><Clock className="h-5 w-5" /></div><h3 className="text-base font-semibold">Time‑boxed by default</h3><p className="mt-2 text-sm text-white/70">Sessions last 30–60 minutes. Chats expire unless both decide to pin them.</p></div>
-        <div id="events" className="rounded-2xl border border-white/10 bg-white/5 p-6 ring-1 ring-white/10"><div className="mb-3 inline-flex rounded-xl bg-white/10 p-2 ring-1 ring-white/15"><Sparkles className="h-5 w-5" /></div><h3 className="text-base font-semibold">Event Rooms</h3><p className="mt-2 text-sm text-white/70">Join campus & conference rooms for guided icebreakers and organizer insights. A lighter alternative to heavy event apps.</p></div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-6 ring-1 ring-white/10">
+          <div className="mb-3 inline-flex rounded-xl bg-white/10 p-2 ring-1 ring-white/15"><ShieldCheck className="h-5 w-5" /></div>
+          <h3 className="text-base font-semibold">Safety & privacy</h3>
+          <p className="mt-2 text-sm text-white/70">Double-opt-in chat, block/report controls, fine-grained visibility windows, and privacy by design. No public trails.</p>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-6 ring-1 ring-white/10">
+          <div className="mb-3 inline-flex rounded-xl bg-white/10 p-2 ring-1 ring-white/15"><Clock className="h-5 w-5" /></div>
+          <h3 className="text-base font-semibold">Time-boxed by default</h3>
+          <p className="mt-2 text-sm text-white/70">Sessions last 30–60 minutes. Chats expire unless both decide to pin them.</p>
+        </div>
+        <div id="events" className="rounded-2xl border border-white/10 bg-white/5 p-6 ring-1 ring-white/10">
+          <div className="mb-3 inline-flex rounded-xl bg-white/10 p-2 ring-1 ring-white/15"><Sparkles className="h-5 w-5" /></div>
+          <h3 className="text-base font-semibold">Event Rooms</h3>
+          <p className="mt-2 text-sm text-white/70">Join campus & conference rooms for guided icebreakers and organizer insights. A lighter alternative to heavy event apps.</p>
+        </div>
       </div>
     </section>
   );
@@ -244,14 +280,17 @@ function PolicySections() {
     <>
       <section id="privacy" className="mx-auto w-full max-w-3xl px-6 py-12">
         <h2 className="text-2xl font-bold">Privacy Policy</h2>
-        <p className="mt-3 text-sm text-white/80">We collect the information you provide (name, email, campus/organization) solely to manage the Juxa waitlist, send updates, and improve the product. We do not sell your data. We use security best practices and honor deletion requests.</p>
+        <p className="mt-3 text-sm text-white/80">
+          We collect the information you provide (name, email, campus/organization) solely to manage the Juxa waitlist, send updates, and improve the product. We do not sell your data. We use security best practices and honor deletion requests.
+        </p>
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-white/80">
-          <li>Data we collect: name, email, campus/organization, submission time.</li>
-          <li>How we use it: early‑access coordination, product updates, aggregate analytics.</li>
-          <li>Retention: kept only as long as needed for the above purposes.</li>
-          <li>Your choices: request deletion or updates any time at <a className="underline" href="mailto:safety@getjuxa.com">safety@getjuxa.com</a>.</li>
+          <li><strong>Data we collect:</strong> name, email, campus/organization, submission time.</li>
+          <li><strong>How we use it:</strong> early-access coordination, product updates, aggregate analytics.</li>
+          <li><strong>Retention:</strong> kept only as long as needed for the above purposes.</li>
+          <li><strong>Your choices:</strong> request deletion or updates any time at <a className="underline" href="mailto:safety@getjuxa.com">safety@getjuxa.com</a>.</li>
         </ul>
       </section>
+
       <section id="terms" className="mx-auto w-full max-w-3xl px-6 py-12">
         <h2 className="text-2xl font-bold">Terms of Use</h2>
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-white/80">
@@ -271,8 +310,11 @@ export default function JuxaLanding() {
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div className="absolute -top-24 -left-24 h-[38rem] w-[38rem] rounded-full bg-[#1FA7A0]/15 blur-3xl" />
         <div className="absolute bottom-0 right-0 h-[32rem] w-[32rem] rounded-full bg-[#FF9C66]/10 blur-3xl" />
-        <motion.div initial={{ opacity: 0.4, rotate: -10 }} animate={{ opacity: 0.7, rotate: 0 }} transition={{ duration: 1.2 }} className="absolute left-[-20rem] top-40"><JuxaMark size={420} stroke={18} /></motion.div>
+        <motion.div initial={{ opacity: 0.4, rotate: -10 }} animate={{ opacity: 0.7, rotate: 0 }} transition={{ duration: 1.2 }} className="absolute left-[-20rem] top-40">
+          <JuxaMark size={420} stroke={18} />
+        </motion.div>
       </div>
+
       <nav className="sticky top-0 z-50 w-full backdrop-blur supports-[backdrop-filter]:bg-[#0E1116]/70 border-b border-white/10">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <BrandWordmark className="text-white" />
@@ -287,32 +329,46 @@ export default function JuxaLanding() {
           </div>
         </div>
       </nav>
+
       <section className="mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-12 px-6 pb-16 pt-10 md:grid-cols-2 lg:gap-16">
         <div>
-          <motion.h1 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl">Open to hello.</motion.h1>
-          <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.08 }} className="mt-4 max-w-xl text-lg text-white/80">Meet people right next to you—safely, with double‑opt‑in. Juxa gives you a 30‑minute window to connect, then lets the moment fade unless you both choose to keep it.</motion.p>
+          <motion.h1 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl">
+            Open to hello.
+          </motion.h1>
+          <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.08 }} className="mt-4 max-w-xl text-lg text-white/80">
+            Meet people right next to you—safely, with double-opt-in. Juxa gives you a 30-minute window to connect, then lets the moment fade unless you both choose to keep it.
+          </motion.p>
+
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.16 }} className="mt-8 flex flex-wrap items-center gap-3">
             <a href="#get" className="inline-flex items-center justify-center rounded-full bg-[#1FA7A0] px-6 py-3 text-sm font-semibold text-black shadow-sm transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70">Get Juxa</a>
             <a href="#how" className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-6 py-3 text-sm font-semibold text-white/90 transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70">How it works</a>
           </motion.div>
+
           <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2">
             <Feature icon={ShieldCheck} title="Consent first" desc="You’re visible only when you toggle Open to Hello." />
-            <Feature icon={Users} title="Double‑opt‑in" desc="Only mutual picks can chat—no cold DMs." />
-            <Feature icon={Clock} title="Time‑boxed" desc="30‑minute sessions keep things light and focused." />
+            <Feature icon={Users} title="Double-opt-in" desc="Only mutual picks can chat—no cold DMs." />
+            <Feature icon={Clock} title="Time-boxed" desc="30-minute sessions keep things light and focused." />
             <Feature icon={Sparkles} title="Event Rooms" desc="Join rooms at campuses & events with live prompts." />
           </div>
         </div>
         <DeviceMock />
       </section>
+
       <HowItWorks />
       <EmailCapture />
       <PolicySections />
+
       <footer className="mx-auto w-full max-w-7xl px-6 pb-10">
         <div className="flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-6 text-xs text-white/60 md:flex-row">
           <div className="flex items-center gap-2"><JuxaMark size={18} stroke={4} /><span>© {new Date().getFullYear()} Juxa</span></div>
-          <div className="flex items-center gap-6"><a href="#privacy" className="hover:text-white">Privacy</a><a href="#terms" className="hover:text-white">Terms</a><a href="#safety" className="hover:text-white">Safety</a></div>
+          <div className="flex items-center gap-6">
+            <a href="#privacy" className="hover:text-white">Privacy</a>
+            <a href="#terms" className="hover:text-white">Terms</a>
+            <a href="#safety" className="hover:text-white">Safety</a>
+          </div>
         </div>
       </footer>
+
       <Analytics />
     </main>
   );
